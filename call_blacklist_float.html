@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>เฝ้าสาย Blacklist</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap">
+<style>
+/* Layout: status banner on top, then two columns — screen stage (left) and blacklist ledger (right). */
+:root{
+  --bg:#e9eeec; --surface:#fbfcfb; --sunk:#dfe6e3; --ink:#12201c; --muted:#56655f; --line:#c5d0cb;
+  --accent:#0c5f66; --on-accent:#f3fbfa;
+  --safe:#12763a; --safe-bg:#dff3e5; --danger:#c8141f; --danger-bg:#fde3e3; --on-danger:#fff5f5;
+  --display:"Chakra Petch","IBM Plex Sans Thai","Leelawadee UI",Tahoma,sans-serif;
+  --body:"IBM Plex Sans Thai","Leelawadee UI","Noto Sans Thai",Tahoma,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0c1312; --surface:#141d1b; --sunk:#0f1716; --ink:#e3ece8; --muted:#93a39d; --line:#2a3835;
+  --accent:#58c2c6; --on-accent:#06201f;
+  --safe:#4ed07f; --safe-bg:#10301c; --danger:#ff5a5f; --danger-bg:#3a1114; --on-danger:#1a0607;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1312; --surface:#141d1b; --sunk:#0f1716; --ink:#e3ece8; --muted:#93a39d; --line:#2a3835;
+  --accent:#58c2c6; --on-accent:#06201f;
+  --safe:#4ed07f; --safe-bg:#10301c; --danger:#ff5a5f; --danger-bg:#3a1114; --on-danger:#1a0607;
+  color-scheme:dark}
+*{box-sizing:border-box}
+html{color-scheme:light}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.55 var(--body)}
+[hidden]{display:none!important}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:22px 48px;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px}
+h1{font:700 22px/1.2 var(--display);margin:0;letter-spacing:.01em}
+header p{margin:0;color:var(--muted)}
+h2{font:700 15px/1.3 var(--display);margin:0;letter-spacing:.04em;text-transform:uppercase}
+button{font:500 14px/1 var(--body);padding:10px 14px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent);font-weight:600}
+button.small{padding:6px 9px;font-size:13px}
+button.danger-text{color:var(--danger)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,textarea{font:400 15px/1.4 var(--body);width:100%;padding:9px 11px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+input.num{font-family:var(--mono);font-weight:500}
+label{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:5px}
+
+/* Status banner */
+#status{border:3px solid var(--line);background:var(--surface);border-radius:10px;padding:18px 22px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 20px;align-items:center}
+#status .st-main{min-width:0;display:flex;flex-direction:column;gap:4px}
+.st-title{font:700 clamp(22px,3.4vw,34px)/1.15 var(--display);text-wrap:balance}
+.st-num{font:600 clamp(20px,3vw,30px)/1.2 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.st-sub{color:var(--muted)}
+.st-note{margin-top:6px;padding:10px 12px;border-left:4px solid var(--danger);background:var(--surface);color:var(--ink);border-radius:0 6px 6px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.st-note b{font-family:var(--display);letter-spacing:.04em}
+.st-note time{color:var(--muted);font-size:13px}
+#status[data-kind="safe"]{border-color:var(--safe);background:var(--safe-bg)}
+#status[data-kind="safe"] .st-title{color:var(--safe)}
+#status[data-kind="alert"]{border-color:var(--danger);background:var(--danger-bg);animation:blink 1s steps(1) infinite}
+#status[data-kind="alert"] .st-title{color:var(--danger)}
+@keyframes blink{50%{border-color:transparent;box-shadow:0 0 0 6px var(--danger)}}
+/* Full-window flashing frame while a blacklisted number is on screen */
+html.alarm body::before{content:"";position:fixed;inset:0;border:12px solid var(--danger);pointer-events:none;z-index:50;animation:frame 1s steps(1) infinite}
+@keyframes frame{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){#status[data-kind="alert"],html.alarm body::before{animation:none}}
+
+#pipBar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between;padding:14px 18px;border-radius:10px;border:2px solid var(--accent);background:var(--surface)}
+#pipBar > div{flex:1 1 300px;min-width:0}
+#pipBar .hint{margin-top:2px}
+#pipBar[data-on="1"]{border:1px solid var(--line)}
+#pipBar[data-on="0"] #pipBtn{font-size:16px;padding:13px 20px}
+#pipFallback{position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none}
+.cols{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:860px){.cols{grid-template-columns:minmax(0,1fr)}#status{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.row.spread{justify-content:space-between}
+.hint{color:var(--muted);font-size:13px;margin:0}
+.msg{color:var(--danger);font-size:13px;margin:0}
+
+/* Screen stage */
+#stage{position:relative;background:var(--sunk);border:1px dashed var(--line);border-radius:8px;overflow:hidden;min-height:220px;display:grid;place-items:center;touch-action:none;user-select:none}
+#stage.live{border-style:solid;cursor:crosshair;min-height:0;display:block}
+#stage video{display:block;width:100%;height:auto}
+#empty{padding:26px;text-align:center;display:flex;flex-direction:column;gap:12px;align-items:center;max-width:46ch}
+#empty ol{margin:0;padding-left:20px;text-align:left;color:var(--muted)}
+#box{position:absolute;border:2px solid var(--accent);box-shadow:0 0 0 9999px rgba(0,0,0,.38);pointer-events:none}
+#box span{position:absolute;left:-2px;top:-24px;background:var(--accent);color:var(--on-accent);font:600 12px/1 var(--body);padding:5px 7px;border-radius:4px 4px 0 0;white-space:nowrap}
+.read{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:560px){.read{grid-template-columns:minmax(0,1fr)}}
+.read > div{min-width:0;display:flex;flex-direction:column;gap:6px}
+#work{max-width:100%;max-height:120px;height:auto;width:auto;align-self:flex-start;border:1px solid var(--line);border-radius:4px;background:var(--sunk)}
+#raw{font:500 13px/1.4 var(--mono);margin:0;padding:8px 10px;background:var(--sunk);border-radius:4px;min-height:38px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow:auto}
+.cap{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+
+/* Blacklist ledger */
+#addForm{display:flex;flex-direction:column;gap:10px}
+#list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+#list li{padding:11px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
+#list .n{font:600 16px/1.3 var(--mono);font-variant-numeric:tabular-nums}
+#list .note{grid-column:1/-1;white-space:pre-wrap;overflow-wrap:anywhere}
+#list .when{grid-column:1/-1;font-size:12px;color:var(--muted)}
+.tag{font:500 11px/1 var(--body);padding:3px 6px;border-radius:3px;background:var(--sunk);color:var(--muted);margin-left:8px;vertical-align:middle}
+#log{list-style:none;margin:0;padding:0;font-size:13px;display:flex;flex-direction:column;gap:4px}
+#log li{display:flex;gap:10px;align-items:baseline}
+#log .t{color:var(--muted);font-variant-numeric:tabular-nums}
+#log .k{font-weight:600}
+#log .k.alert{color:var(--danger)} #log .k.safe{color:var(--safe)}
+#log .n{font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>เฝ้าสาย Blacklist <span class="tag">รุ่น 3</span></h1>
+    <p>อ่านเบอร์โทรจากกล่องที่คุณลากไว้บนหน้าจอ แล้วเทียบกับ Blacklist ทันที</p>
+  </header>
+
+  <section id="status" data-kind="idle" aria-live="assertive">
+    <div class="st-main">
+      <div class="st-title" id="stTitle">รอสายเข้า</div>
+      <div class="st-num" id="stNum"></div>
+      <div class="st-sub" id="stSub">ยังไม่พบเบอร์โทรในกล่อง</div>
+      <div class="st-note" id="stNote" hidden></div>
+    </div>
+    <button id="addFromStatus" class="small" hidden>เพิ่มเบอร์นี้เข้า Blacklist</button>
+  </section>
+
+  <section id="pipBar" data-on="0">
+    <div>
+      <strong>กล่องลอย: <span id="pipState">ยังไม่เปิด</span></strong>
+      <p class="hint" id="pipHint">ต้องเปิดกล่องลอยก่อนสลับไปแท็บอื่น ไม่อย่างนั้นการเตือนจะขึ้นแค่ในหน้านี้ กล่องลอยเป็นหน้าต่างเล็กที่ค้างอยู่บนสุดของทุกแท็บและทุกโปรแกรม</p>
+    </div>
+    <button id="pipBtn" class="primary">เปิดกล่องลอย</button>
+  </section>
+
+  <div class="cols">
+    <section class="panel">
+      <div class="row spread">
+        <h2>หน้าจอ</h2>
+        <div class="row">
+          <button id="soundBtn" class="small" aria-pressed="true">เสียงเตือน: เปิด</button>
+          <button id="stopBtn" class="small" hidden>หยุดจับหน้าจอ</button>
+        </div>
+      </div>
+      <div id="stage">
+        <div id="empty">
+          <ol>
+            <li>กดปุ่มด้านล่าง แล้วเลือกหน้าจอหรือหน้าต่างที่เบอร์โทรเข้าจะขึ้น</li>
+            <li>ลากเมาส์บนภาพเพื่อสร้างกล่องครอบตำแหน่งเบอร์โทร</li>
+            <li>กด “เปิดกล่องลอย” แล้วไปทำงานที่แท็บอื่นได้ กล่องลอยจะเปลี่ยนสีและขึ้นข้อความเมื่อมีสายเข้า</li>
+          </ol>
+          <button id="startBtn" class="primary">เริ่มจับหน้าจอ</button>
+        </div>
+        <video id="video" muted playsinline hidden></video>
+        <div id="box" hidden><span>กล่องตรวจเบอร์</span></div>
+      </div>
+      <p class="msg" id="capMsg" hidden></p>
+      <p class="hint" id="capHint" hidden>ลากบนภาพเพื่อวาดกล่องใหม่ได้ตลอด ยิ่งกล่องพอดีกับเบอร์ยิ่งอ่านแม่น วางกล่องลอยไว้ข้าง ๆ ตำแหน่งเบอร์ อย่าวางทับ</p>
+      <div class="read">
+        <div><span class="cap">ภาพในกล่อง</span><canvas id="work" width="240" height="40"></canvas></div>
+        <div><span class="cap">ข้อความที่อ่านได้</span><pre id="raw">–</pre></div>
+      </div>
+      <form id="testForm" class="row">
+        <label style="flex:1 1 200px">ทดสอบด้วยการพิมพ์เบอร์เอง
+          <input id="testNum" class="num" inputmode="tel" placeholder="08x-xxx-xxxx" autocomplete="off">
+        </label>
+        <button type="submit" style="align-self:flex-end">ตรวจเบอร์นี้</button>
+      </form>
+      <div>
+        <span class="cap">ตรวจพบล่าสุด</span>
+        <ul id="log"><li class="t">ยังไม่มีรายการ</li></ul>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="row spread">
+        <h2>Blacklist <span id="count" class="tag"></span></h2>
+        <div class="row">
+          <button id="exportBtn" class="small">ส่งออก</button>
+          <button id="importBtn" class="small">นำเข้า</button>
+          <input id="importFile" type="file" accept="application/json,.json" hidden>
+        </div>
+      </div>
+      <form id="addForm">
+        <label>เบอร์โทร
+          <input id="addNum" class="num" inputmode="tel" placeholder="08x-xxx-xxxx" autocomplete="off" required>
+        </label>
+        <label>Noted: ล่าสุดเขาทำอะไรไว้
+          <textarea id="addNote" rows="2" placeholder="เช่น โทรมาหลอกให้โอนเงิน อ้างเป็นธนาคาร"></textarea>
+        </label>
+        <div class="row">
+          <button type="submit" class="primary" id="addBtn">เพิ่มเข้า Blacklist</button>
+          <span class="hint" id="addMsg"></span>
+        </div>
+      </form>
+      <ul id="list"></ul>
+      <p class="hint">รายการเก็บไว้ในเบราว์เซอร์นี้เท่านั้น กด “ส่งออก” เพื่อสำรองเป็นไฟล์</p>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+};
+const K = { list:'cbw.blacklist.v1', box:'cbw.box.v1', sound:'cbw.sound.v1' };
+
+/* ---------- phone number logic ---------- */
+function norm(s){
+  let d = String(s).replace(/\D/g, '');
+  if (d.startsWith('0066')) d = d.slice(2);
+  if (d.startsWith('66') && (d.length === 10 || d.length === 11)) d = '0' + d.slice(2);
+  return d;
+}
+function pretty(d){
+  if (/^0[689]\d{8}$/.test(d)) return d.slice(0,3) + '-' + d.slice(3,6) + '-' + d.slice(6);
+  if (/^02\d{7}$/.test(d)) return '02-' + d.slice(2,5) + '-' + d.slice(5);
+  if (/^0\d{8}$/.test(d)) return d.slice(0,3) + '-' + d.slice(3,6) + '-' + d.slice(6);
+  return d;
+}
+const FIX = { O:'0', o:'0', Q:'0', D:'0', l:'1', I:'1', '|':'1', i:'1', S:'5', s:'5', B:'8', Z:'2', z:'2' };
+function fixOcr(t){
+  // Letters that sit between digits are almost always misread digits.
+  let prev;
+  t = t.replace(/(^|[^\w])([OoQD])(?=[\s\-]?\d)/gm, '$10');
+  do { prev = t; t = t.replace(/([\d+][\s\-().]?)([OoQDlI|iSsBZz])(?=[\s\-().]?\d)/g, (m, a, c) => a + FIX[c]); } while (t !== prev);
+  return t;
+}
+function extract(text){
+  const out = [];
+  const t = fixOcr(text);
+  for (const m of t.matchAll(/\+?\d[\d \t\-().]{6,}\d/g)) {
+    const d = norm(m[0]);
+    if (d.length >= 8 && d.length <= 13 && !out.includes(d)) out.push(d);
+  }
+  return out;
+}
+function findHit(cands){
+  for (const c of cands) for (const e of list) {
+    if (c === e.number || (e.number.length >= 8 && c.includes(e.number))) return { number: e.number, entry: e };
+  }
+  return null;
+}
+
+/* ---------- blacklist ---------- */
+let list = store.get(K.list, null);
+if (!Array.isArray(list)) {
+  const now = Date.now();
+  list = [
+    { number:'0800000001', note:'โทรมาอ้างเป็นเจ้าหน้าที่ธนาคาร ขอรหัส OTP', at: now, example:true },
+    { number:'020000002', note:'ขายประกันซ้ำ ๆ บอกเลิกแล้วยังโทรมาอีก', at: now, example:true }
+  ];
+}
+const saveList = () => store.set(K.list, list);
+const fmtTime = t => { try{ return new Date(t).toLocaleString('th-TH', { dateStyle:'medium', timeStyle:'short' }); }catch{ return ''; } };
+
+function renderList(){
+  const ul = $('list'); ul.textContent = '';
+  $('count').textContent = list.length + ' เบอร์';
+  if (!list.length) {
+    const li = document.createElement('li'); li.className = 'when';
+    li.textContent = 'ยังไม่มีเบอร์ใน Blacklist เพิ่มเบอร์แรกได้จากช่องด้านบน';
+    ul.append(li); return;
+  }
+  for (const e of [...list].sort((a,b) => b.at - a.at)) {
+    const li = document.createElement('li');
+    const n = document.createElement('div'); n.className = 'n'; n.textContent = pretty(e.number);
+    if (e.example) { const tg = document.createElement('span'); tg.className = 'tag'; tg.textContent = 'ตัวอย่าง'; n.append(tg); }
+    const acts = document.createElement('div'); acts.className = 'row';
+    const ed = document.createElement('button'); ed.className = 'small'; ed.textContent = 'แก้ไข';
+    ed.onclick = () => { $('addNum').value = pretty(e.number); $('addNote').value = e.note; syncAddBtn(); $('addNote').focus(); };
+    const del = document.createElement('button'); del.className = 'small danger-text'; del.textContent = 'ลบ';
+    del.onclick = () => {
+      if (del.dataset.arm) { list = list.filter(x => x !== e); saveList(); renderList(); recheck(); }
+      else { del.dataset.arm = '1'; del.textContent = 'ยืนยันลบ'; setTimeout(() => { delete del.dataset.arm; del.textContent = 'ลบ'; }, 3000); }
+    };
+    acts.append(ed, del);
+    const note = document.createElement('div'); note.className = 'note'; note.textContent = e.note || '(ยังไม่มีบันทึก)';
+    const when = document.createElement('div'); when.className = 'when'; when.textContent = 'บันทึกล่าสุด ' + fmtTime(e.at);
+    li.append(n, acts, note, when); ul.append(li);
+  }
+}
+function syncAddBtn(){
+  const d = norm($('addNum').value);
+  $('addBtn').textContent = list.some(e => e.number === d) ? 'อัปเดตบันทึก' : 'เพิ่มเข้า Blacklist';
+}
+$('addNum').addEventListener('input', syncAddBtn);
+$('addForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const d = norm($('addNum').value), note = $('addNote').value.trim();
+  if (d.length < 8 || d.length > 13) { $('addMsg').textContent = 'เบอร์ต้องมี 8–13 หลัก'; return; }
+  const ex = list.find(e => e.number === d);
+  if (ex) { ex.note = note; ex.at = Date.now(); delete ex.example; $('addMsg').textContent = 'อัปเดต ' + pretty(d) + ' แล้ว'; }
+  else { list.push({ number:d, note, at: Date.now() }); $('addMsg').textContent = 'เพิ่ม ' + pretty(d) + ' แล้ว'; }
+  saveList(); renderList(); $('addForm').reset(); syncAddBtn(); recheck();
+});
+$('exportBtn').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(list, null, 2)], { type:'application/json' }));
+  a.download = 'blacklist.json'; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+$('importBtn').onclick = () => $('importFile').click();
+$('importFile').addEventListener('change', async ev => {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  try {
+    const arr = JSON.parse(await f.text()); let n = 0;
+    for (const x of Array.isArray(arr) ? arr : []) {
+      const d = norm(x && x.number); if (d.length < 8 || d.length > 13) continue;
+      const ex = list.find(e => e.number === d);
+      const item = { number:d, note:String(x.note || ''), at: Number(x.at) || Date.now() };
+      if (ex) { if (item.at >= ex.at) Object.assign(ex, item); } else list.push(item);
+      n++;
+    }
+    saveList(); renderList(); recheck(); $('addMsg').textContent = 'นำเข้า ' + n + ' เบอร์แล้ว';
+  } catch { $('addMsg').textContent = 'อ่านไฟล์ไม่ได้ ต้องเป็นไฟล์ JSON ที่ส่งออกจากหน้านี้'; }
+});
+
+/* ---------- status + alarm ---------- */
+let current = { kind:'idle', cands:[] }, lastLogged = '', log = [], beepTimer = null, titleTimer = null, audio = null;
+let soundOn = store.get(K.sound, true);
+const BASE_TITLE = document.title;
+
+function setStatus(cands){
+  const hit = findHit(cands);
+  const kind = hit ? 'alert' : cands.length ? 'safe' : 'idle';
+  current = { kind, cands, hit };
+  paintPip();
+  const st = $('status'); st.dataset.kind = kind;
+  const note = $('stNote'), addB = $('addFromStatus');
+  note.hidden = true; addB.hidden = true; note.textContent = '';
+  if (kind === 'alert') {
+    $('stTitle').textContent = 'ALERT! ไม่ควรรับสาย';
+    $('stNum').textContent = pretty(hit.number);
+    $('stSub').textContent = 'เบอร์นี้อยู่ใน Blacklist';
+    const b = document.createElement('b'); b.textContent = 'NOTED ';
+    const tm = document.createElement('time'); tm.textContent = fmtTime(hit.entry.at);
+    note.append(b, tm, document.createElement('br'), hit.entry.note || '(ยังไม่มีบันทึก)');
+    note.hidden = false;
+  } else if (kind === 'safe') {
+    $('stTitle').textContent = 'ไม่อยู่ใน Blacklist';
+    $('stNum').textContent = cands.map(pretty).join('  ·  ');
+    $('stSub').textContent = 'ยังไม่มีประวัติไม่ดีกับเบอร์นี้';
+    addB.hidden = false;
+  } else {
+    $('stTitle').textContent = 'รอสายเข้า';
+    $('stNum').textContent = '';
+    $('stSub').textContent = 'ยังไม่พบเบอร์โทรในกล่อง';
+  }
+  document.documentElement.classList.toggle('alarm', kind === 'alert');
+  alarm(kind === 'alert');
+  const key = kind + ':' + (hit ? hit.number : cands.join(','));
+  if (kind !== 'idle' && key !== lastLogged) {
+    log.unshift({ t: Date.now(), kind, number: hit ? hit.number : cands[0] });
+    log = log.slice(0, 6); renderLog();
+  }
+  lastLogged = key;
+}
+const recheck = () => setStatus(current.cands);
+function renderLog(){
+  const ul = $('log'); ul.textContent = '';
+  for (const r of log) {
+    const li = document.createElement('li');
+    const t = document.createElement('span'); t.className = 't'; t.textContent = new Date(r.t).toLocaleTimeString('th-TH');
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = pretty(r.number);
+    const k = document.createElement('span'); k.className = 'k ' + r.kind; k.textContent = r.kind === 'alert' ? 'อยู่ใน Blacklist' : 'ปลอดภัย';
+    li.append(t, n, k); ul.append(li);
+  }
+}
+function beep(){
+  if (!soundOn || !audio) return;
+  try {
+    [0, .22].forEach(off => {
+      const o = audio.createOscillator(), g = audio.createGain(), t0 = audio.currentTime + off;
+      o.type = 'square'; o.frequency.value = 880;
+      g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(.18, t0 + .02); g.gain.exponentialRampToValueAtTime(.0001, t0 + .16);
+      o.connect(g).connect(audio.destination); o.start(t0); o.stop(t0 + .18);
+    });
+  } catch {}
+}
+function alarm(on){
+  if (on && !beepTimer) {
+    beep(); beepTimer = setInterval(beep, 1600);
+    let f = false; titleTimer = setInterval(() => { document.title = (f = !f) ? '⚠ BLACKLIST โทรมา' : BASE_TITLE; }, 800);
+  } else if (!on && beepTimer) {
+    clearInterval(beepTimer); clearInterval(titleTimer); beepTimer = titleTimer = null; document.title = BASE_TITLE;
+  }
+}
+function wakeAudio(){
+  try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') audio.resume(); } catch {}
+}
+function syncSound(){ $('soundBtn').textContent = 'เสียงเตือน: ' + (soundOn ? 'เปิด' : 'ปิด'); $('soundBtn').setAttribute('aria-pressed', soundOn); }
+$('soundBtn').onclick = () => { soundOn = !soundOn; store.set(K.sound, soundOn); if (soundOn) wakeAudio(); syncSound(); };
+$('addFromStatus').onclick = () => {
+  if (!current.cands.length) return;
+  $('addNum').value = pretty(current.cands[0]); syncAddBtn(); $('addNote').focus();
+};
+$('testForm').addEventListener('submit', ev => {
+  ev.preventDefault(); wakeAudio();
+  const d = norm($('testNum').value);
+  setStatus(d.length >= 8 && d.length <= 13 ? [d] : []);
+});
+
+/* ---------- floating always-on-top box (Document Picture-in-Picture) ---------- */
+let pip = null;
+const PIP_CSS = `
+  html,body{height:100%;margin:0}
+  body{box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:10px 14px;
+    font:500 14px/1.35 "Leelawadee UI","Noto Sans Thai",Tahoma,sans-serif;border:8px solid #2a3835;background:#141d1b;color:#93a39d;overflow:hidden}
+  #t{font-weight:700;font-size:19px;line-height:1.2}
+  #n{font:600 22px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.02em}
+  #s{white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}
+  #n:empty,#s:empty{display:none}
+  body[data-kind="safe"]{background:#0f6b34;border-color:#4ed07f;color:#fff}
+  body[data-kind="alert"]{background:#b80f1a;color:#fff;border-color:#fff;animation:fl 1s steps(1) infinite}
+  @keyframes fl{50%{border-color:#b80f1a;background:#7a0810}}
+  @media (prefers-reduced-motion:reduce){body[data-kind="alert"]{animation:none}}`;
+let vpip = null;   // fallback: classic video Picture-in-Picture fed by a canvas
+function pipView(){
+  const k = current.kind, h = current.hit;
+  return {
+    kind: k,
+    title: k === 'alert' ? 'ALERT! ไม่ควรรับสาย' : k === 'safe' ? 'ไม่อยู่ใน Blacklist' : (stream ? 'รอสายเข้า' : 'ยังไม่ได้จับหน้าจอ'),
+    num: k === 'alert' ? pretty(h.number) : k === 'safe' ? current.cands.map(pretty).join(' · ') : '',
+    note: k === 'alert' ? 'Noted (' + fmtTime(h.entry.at) + '): ' + (h.entry.note || 'ยังไม่มีบันทึก') : ''
+  };
+}
+function wrapText(x, text, maxW){
+  const lines = []; let line = '';
+  for (const ch of text) { if (x.measureText(line + ch).width > maxW && line) { lines.push(line); line = ch; } else line += ch; }
+  if (line) lines.push(line); return lines;
+}
+function drawVpip(){
+  if (!vpip) return;
+  const v = pipView(), x = vpip.x, W = vpip.c.width, H = vpip.c.height, flash = v.kind === 'alert' && vpip.phase;
+  x.fillStyle = v.kind === 'alert' ? (flash ? '#7a0810' : '#b80f1a') : v.kind === 'safe' ? '#0f6b34' : '#141d1b';
+  x.fillRect(0, 0, W, H);
+  x.lineWidth = 16; x.strokeStyle = v.kind === 'alert' ? (flash ? '#b80f1a' : '#ffffff') : v.kind === 'safe' ? '#4ed07f' : '#2a3835';
+  x.strokeRect(8, 8, W - 16, H - 16);
+  x.fillStyle = v.kind === 'idle' ? '#93a39d' : '#ffffff'; x.textBaseline = 'top';
+  let y = 30;
+  x.font = '700 34px "Leelawadee UI","Noto Sans Thai",Tahoma,sans-serif'; x.fillText(v.title, 30, y); y += 50;
+  if (v.num) { x.font = '600 38px ui-monospace,Consolas,monospace'; x.fillText(v.num, 30, y); y += 54; }
+  if (v.note) { x.font = '500 24px "Leelawadee UI","Noto Sans Thai",Tahoma,sans-serif'; for (const l of wrapText(x, v.note, W - 60).slice(0, 4)) { x.fillText(l, 30, y); y += 32; } }
+}
+function paintPip(){
+  drawVpip();
+  if (!pip) return;
+  const d = pip.document, v = pipView();
+  d.body.dataset.kind = v.kind;
+  d.getElementById('t').textContent = v.title;
+  d.getElementById('n').textContent = v.num;
+  d.getElementById('s').textContent = v.note;
+}
+function syncPip(){
+  const on = !!(pip || vpip);
+  $('pipBar').dataset.on = on ? '1' : '0';
+  $('pipState').textContent = on ? 'เปิดอยู่' : 'ยังไม่เปิด';
+  $('pipBtn').textContent = on ? 'ปิดกล่องลอย' : 'เปิดกล่องลอย';
+  $('pipHint').textContent = on
+    ? 'สลับไปแท็บอื่นได้เลย ลากกล่องลอยไปวางข้าง ๆ ตำแหน่งเบอร์ อย่าวางทับ และอย่าปิดแท็บนี้'
+    : 'ต้องเปิดกล่องลอยก่อนสลับไปแท็บอื่น ไม่อย่างนั้นการเตือนจะขึ้นแค่ในหน้านี้ กล่องลอยเป็นหน้าต่างเล็กที่ค้างอยู่บนสุดของทุกแท็บและทุกโปรแกรม';
+}
+function pipMsg(t){ $('pipHint').textContent = t; }
+async function openDocPip(){
+  const w = await documentPictureInPicture.requestWindow({ width: 360, height: 180 });
+  const d = w.document; d.title = 'เฝ้าสาย Blacklist';
+  const st = d.createElement('style'); st.textContent = PIP_CSS; d.head.append(st);
+  for (const id of ['t', 'n', 's']) { const e = d.createElement('div'); e.id = id; d.body.append(e); }
+  w.addEventListener('pagehide', () => { pip = null; syncPip(); });
+  pip = w;
+}
+async function openVideoPip(){
+  const c = document.createElement('canvas'); c.width = 520; c.height = 280;
+  const v = document.createElement('video'); v.id = 'pipFallback'; v.muted = true; v.playsInline = true;
+  const o = { c, x: c.getContext('2d'), v, phase: false };
+  vpip = o; drawVpip();
+  try {
+    v.srcObject = c.captureStream(4); document.body.append(v);
+    await v.play(); await v.requestPictureInPicture();
+  } catch (e) { vpip = null; v.remove(); throw e; }
+  o.timer = setInterval(() => { o.phase = !o.phase; drawVpip(); }, 500);
+  v.addEventListener('leavepictureinpicture', () => { clearInterval(o.timer); v.remove(); if (vpip === o) vpip = null; syncPip(); });
+}
+async function togglePip(quiet){
+  if (pip) { pip.close(); return; }
+  if (vpip) { try { await document.exitPictureInPicture(); } catch {} return; }
+  let ok = false;
+  if (window.documentPictureInPicture && documentPictureInPicture.requestWindow) { try { await openDocPip(); ok = true; } catch {} }
+  if (!ok && document.pictureInPictureEnabled) { try { await openVideoPip(); ok = true; } catch {} }
+  syncPip(); paintPip();
+  if (!ok && quiet !== true) pipMsg(document.pictureInPictureEnabled || window.documentPictureInPicture
+    ? 'เปิดกล่องลอยไม่สำเร็จ กดปุ่ม “เปิดกล่องลอย” อีกครั้ง'
+    : 'เบราว์เซอร์นี้เปิดกล่องลอยไม่ได้ ให้เปิดไฟล์นี้ด้วย Chrome หรือ Edge รุ่นล่าสุดบนคอมพิวเตอร์');
+}
+$('pipBtn').onclick = togglePip;
+
+/* ---------- screen capture + box ---------- */
+const video = $('video'), stage = $('stage'), boxEl = $('box'), work = $('work');
+const wctx = work.getContext('2d', { willReadFrequently:true });
+let stream = null, box = store.get(K.box, null), ocr = null, ocrLoading = null, busy = false, lastHash = null, misses = 0, ticker = null;
+
+function capMsg(t){ $('capMsg').textContent = t || ''; $('capMsg').hidden = !t; }
+function drawBox(){
+  if (!box || !stream) { boxEl.hidden = true; return; }
+  boxEl.hidden = false;
+  Object.assign(boxEl.style, { left: box.x*100 + '%', top: box.y*100 + '%', width: box.w*100 + '%', height: box.h*100 + '%' });
+}
+async function loadOcr(){
+  if (ocr) return ocr;
+  if (!window.Tesseract) throw new Error('no-lib');
+  ocrLoading = ocrLoading || (async () => {
+    let w;
+    try { w = await Tesseract.createWorker('eng', 1); }
+    catch { w = await Tesseract.createWorker('eng', 1, { cacheMethod:'none' }); }
+    await w.setParameters({ tessedit_pageseg_mode:'6' });
+    return (ocr = w);
+  })();
+  return ocrLoading;
+}
+async function start(){
+  wakeAudio(); capMsg('');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    capMsg('เบราว์เซอร์นี้จับหน้าจอไม่ได้ เปิดไฟล์นี้ด้วย Chrome หรือ Edge บนคอมพิวเตอร์'); return;
+  }
+  try { stream = await navigator.mediaDevices.getDisplayMedia({ video:{ frameRate:5 }, audio:false }); }
+  catch { capMsg('ยังไม่ได้เลือกหน้าจอ กด “เริ่มจับหน้าจอ” แล้วเลือกหน้าจอที่ต้องการอีกครั้ง'); return; }
+  video.srcObject = stream; video.hidden = false; $('empty').hidden = true;
+  stage.classList.add('live'); $('stopBtn').hidden = false; $('capHint').hidden = false;
+  try { await video.play(); } catch {}
+  stream.getVideoTracks()[0].addEventListener('ended', stop);
+  drawBox(); lastHash = null;
+  if (!box) capMsg('ลากเมาส์บนภาพเพื่อสร้างกล่องครอบตำแหน่งที่เบอร์โทรเข้าจะขึ้น');
+  $('raw').textContent = 'กำลังโหลดตัวอ่านตัวอักษร…';
+  try { await loadOcr(); $('raw').textContent = '–'; }
+  catch { ocrLoading = null; $('raw').textContent = '–'; capMsg('โหลดตัวอ่านตัวอักษรไม่ได้ ตรวจการเชื่อมต่ออินเทอร์เน็ตแล้วเปิดหน้านี้ใหม่'); return; }
+  startTicker();
+}
+function stop(){
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; video.srcObject = null; video.hidden = true; $('empty').hidden = false;
+  stage.classList.remove('live'); $('stopBtn').hidden = true; $('capHint').hidden = true; boxEl.hidden = true;
+  if (ticker) { ticker.terminate ? ticker.terminate() : clearInterval(ticker); ticker = null; }
+  capMsg(''); setStatus([]);
+}
+function startTicker(){
+  if (ticker) return;
+  try { // worker timers keep ticking when this tab is in the background
+    const url = URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),1000)'], { type:'text/javascript' }));
+    ticker = new Worker(url); ticker.onmessage = scan;
+  } catch { ticker = setInterval(scan, 1000); }
+}
+async function scan(){
+  if (busy || !stream || !box || !ocr || !video.videoWidth) return;
+  busy = true;
+  try {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const sx = box.x*vw, sy = box.y*vh, sw = Math.max(8, box.w*vw), sh = Math.max(8, box.h*vh);
+    const scale = Math.min(3, Math.max(1, 1600/sw));
+    work.width = Math.round(sw*scale); work.height = Math.round(sh*scale);
+    wctx.imageSmoothingQuality = 'high';
+    wctx.drawImage(video, sx, sy, sw, sh, 0, 0, work.width, work.height);
+    const img = wctx.getImageData(0, 0, work.width, work.height), d = img.data;
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4) { const g = (d[i]*77 + d[i+1]*150 + d[i+2]*29) >> 8; d[i] = d[i+1] = d[i+2] = g; sum += g; }
+    const dark = sum / (d.length/4) < 110;   // light text on dark background reads better inverted
+    let h = 0; const step = 4 * Math.max(1, Math.floor(d.length / 4 / 4000));
+    for (let i = 0; i < d.length; i += 4) { if (dark) d[i] = d[i+1] = d[i+2] = 255 - d[i]; }
+    for (let i = 0; i < d.length; i += step) h = (h*31 + d[i]) >>> 0;
+    wctx.putImageData(img, 0, 0);
+    if (h === lastHash) return;
+    lastHash = h;
+    const { data } = await ocr.recognize(work);
+    const text = (data.text || '').trim();
+    $('raw').textContent = text || '–';
+    const cands = extract(text);
+    if (cands.length) { misses = 0; setStatus(cands); }
+    else if (++misses >= 2 || current.kind === 'idle') setStatus([]);
+    else lastHash = null;   // read once more before clearing, so one bad read doesn't drop an alert
+  } catch (e) { console.warn(e); }
+  finally { busy = false; }
+}
+$('startBtn').onclick = start;
+$('stopBtn').onclick = stop;
+
+let drag = null;
+const rel = ev => { const r = video.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (ev.clientX - r.left)/r.width)), y: Math.min(1, Math.max(0, (ev.clientY - r.top)/r.height)) }; };
+stage.addEventListener('pointerdown', ev => {
+  if (!stream || ev.button) return;
+  drag = { start: rel(ev), prev: box }; stage.setPointerCapture(ev.pointerId); ev.preventDefault();
+});
+stage.addEventListener('pointermove', ev => {
+  if (!drag) return;
+  const p = rel(ev), s = drag.start;
+  box = { x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) };
+  drawBox();
+});
+const endDrag = () => {
+  if (!drag) return;
+  if (!box || box.w < .01 || box.h < .01) box = drag.prev;   // a click, not a drag
+  else { store.set(K.box, box); capMsg(''); lastHash = null; misses = 0; if (!pip && !vpip) togglePip(true); }
+  drag = null; drawBox();
+};
+stage.addEventListener('pointerup', endDrag);
+stage.addEventListener('pointercancel', endDrag);
+
+/* ---------- boot ---------- */
+window.__cbw = { norm, extract, fixOcr };
+renderList(); syncSound(); syncAddBtn(); syncPip(); setStatus([]);
+})();
+</script>
+</body>
+</html>
